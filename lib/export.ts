@@ -3,13 +3,19 @@ import { saveAs } from "file-saver";
 import jsPDF from "jspdf";
 import { db, type Book, type Chapter, type Scene } from "@/lib/db";
 
+interface TipTapNode {
+  type?: string;
+  content?: TipTapNode[];
+  text?: string;
+}
+
 function tiptapJsonToPlainParagraphs(json: string): string[] {
   try {
-    const parsed = JSON.parse(json);
+    const parsed = JSON.parse(json) as TipTapNode;
     const paras: string[] = [];
-    const walk = (node: any) => {
+    const walk = (node: TipTapNode) => {
       if (node.type === "paragraph") {
-        const text = (node.content || []).map((c: any) => c.text || "").join("");
+        const text = (node.content || []).map((c) => c.text || "").join("");
         paras.push(text);
       } else if (node.content) {
         node.content.forEach(walk);

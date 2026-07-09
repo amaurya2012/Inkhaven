@@ -10,7 +10,6 @@ export default function NotesPanel({ bookId }: { bookId: string }) {
   const [tab, setTab] = useState<"characters" | "world">("characters");
   const characters = useLiveQuery(() => db.characters.where("bookId").equals(bookId).toArray(), [bookId]) ?? [];
   const notes = useLiveQuery(() => db.worldNotes.where("bookId").equals(bookId).toArray(), [bookId]) ?? [];
-  const [openId, setOpenId] = useState<string | null>(null);
 
   const addCharacter = async () => {
     const id = newId();
@@ -24,7 +23,6 @@ export default function NotesPanel({ bookId }: { bookId: string }) {
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
-    setOpenId(id);
   };
 
   const addNote = async () => {
@@ -38,7 +36,6 @@ export default function NotesPanel({ bookId }: { bookId: string }) {
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
-    setOpenId(id);
   };
 
   return (
@@ -123,7 +120,11 @@ export default function NotesPanel({ bookId }: { bookId: string }) {
                   <select
                     className="bg-transparent text-xs text-ink-soft outline-none"
                     value={n.category}
-                    onChange={(e) => db.worldNotes.update(n.id, { category: e.target.value as any })}
+                    onChange={(e) =>
+                      db.worldNotes.update(n.id, {
+                        category: e.target.value as "location" | "timeline" | "lore" | "other",
+                      })
+                    }
                   >
                     <option value="location">Location</option>
                     <option value="timeline">Timeline</option>
