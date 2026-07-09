@@ -1,0 +1,147 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #EFE8D8;
+  --bg-dim: #E5DCC6;
+  --text: #2B2620;
+  --text-soft: #5C564C;
+  --accent: #3A4A6B;
+  --brass: #B08D57;
+  --border: #DCD2B8;
+  --text-rgb: 43 38 32;
+  --text-soft-rgb: 92 86 76;
+  --accent-rgb: 58 74 107;
+}
+
+.dark {
+  --bg: #201C16;
+  --bg-dim: #2A251D;
+  --text: #EDE6D6;
+  --text-soft: #B8A98F;
+  --accent: #5E7099;
+  --brass: #CBAE80;
+  --border: #362F25;
+  --text-rgb: 237 230 214;
+  --text-soft-rgb: 184 169 143;
+  --accent-rgb: 94 112 153;
+}
+
+.sepia {
+  --bg: #E9DDBE;
+  --bg-dim: #DFD0A9;
+  --text: #3A322A;
+  --text-soft: #6E6355;
+  --accent: #3A4A6B;
+  --brass: #B08D57;
+  --border: #D0C29A;
+  --text-rgb: 58 50 42;
+  --text-soft-rgb: 110 99 85;
+  --accent-rgb: 58 74 107;
+}
+
+* {
+  border-color: var(--border);
+}
+
+html,
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+::selection {
+  background-color: rgb(var(--accent-rgb) / 0.22);
+  color: var(--text);
+}
+
+/* subtle paper grain */
+.paper-grain {
+  position: relative;
+}
+.paper-grain::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* TipTap editor styling */
+.ProseMirror {
+  outline: none;
+  font-family: var(--font-editor), Georgia, serif;
+  font-size: 1.15rem;
+  line-height: 1.85;
+  color: var(--text);
+  caret-color: var(--accent);
+}
+
+.ProseMirror p {
+  margin-bottom: 1.1em;
+}
+
+.ProseMirror h1,
+.ProseMirror h2,
+.ProseMirror h3 {
+  font-family: var(--font-editor), Georgia, serif;
+  font-weight: 600;
+  margin-top: 1.4em;
+  margin-bottom: 0.6em;
+}
+
+.ProseMirror a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-color: rgb(var(--text-rgb) / 0.3);
+  text-underline-offset: 2px;
+}
+
+.ProseMirror blockquote {
+  border-left: 2px solid var(--brass);
+  padding-left: 1em;
+  margin-left: 0;
+  font-style: italic;
+  color: var(--text-soft);
+}
+
+.ProseMirror hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 2em 0;
+}
+
+.ProseMirror ul,
+.ProseMirror ol {
+  padding-left: 1.4em;
+  margin-bottom: 1.1em;
+}
+
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--text-soft);
+  opacity: 0.5;
+  pointer-events: none;
+  height: 0;
+}
+
+/* typewriter focus-mode caret line highlight */
+.typewriter-mode .ProseMirror {
+  padding-top: 40vh;
+  padding-bottom: 40vh;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 8px;
+}
