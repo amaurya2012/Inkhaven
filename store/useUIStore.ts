@@ -16,6 +16,10 @@ interface UIState {
   toggleToolbar: () => void;
   sidebarWidth: number;
   setSidebarWidth: (w: number) => void;
+  editorFontSize: number;
+  setEditorFontSize: (n: number) => void;
+  editorLineHeight: number;
+  setEditorLineHeight: (n: number) => void;
   ambientSound: boolean;
   toggleAmbientSound: () => void;
   ambientPreset: AmbientPreset;
@@ -42,6 +46,10 @@ export const useUIStore = create<UIState>((set) => ({
   toggleToolbar: () => set((s) => ({ toolbarOpen: !s.toolbarOpen })),
   sidebarWidth: 288,
   setSidebarWidth: (w) => set({ sidebarWidth: Math.min(420, Math.max(200, w)) }),
+  editorFontSize: 18.4, // ~1.15rem
+  setEditorFontSize: (n) => set({ editorFontSize: Math.min(26, Math.max(14, n)) }),
+  editorLineHeight: 1.85,
+  setEditorLineHeight: (n) => set({ editorLineHeight: Math.min(2.4, Math.max(1.3, Math.round(n * 100) / 100)) }),
   ambientSound: false,
   toggleAmbientSound: () => set((s) => ({ ambientSound: !s.ambientSound })),
   ambientPreset: "rain",

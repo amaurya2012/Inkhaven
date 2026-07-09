@@ -7,7 +7,7 @@ import Typography from "@tiptap/extension-typography";
 import Underline from "@tiptap/extension-underline";
 import TextAlign from "@tiptap/extension-text-align";
 import Link from "@tiptap/extension-link";
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { db, type Scene } from "@/lib/db";
 import { countWords, newId, todayStr } from "@/lib/utils";
 import { useUIStore } from "@/store/useUIStore";
@@ -28,6 +28,8 @@ import {
   AlignJustify,
   LinkIcon,
   Minus,
+  Plus,
+  ALargeSmall,
   Undo2,
   Redo2,
 } from "lucide-react";
@@ -61,6 +63,11 @@ export default function Editor({ scene }: { scene: Scene }) {
   const setSaveStatus = useUIStore((s) => s.setSaveStatus);
   const focusMode = useUIStore((s) => s.focusMode);
   const toolbarOpen = useUIStore((s) => s.toolbarOpen);
+  const editorFontSize = useUIStore((s) => s.editorFontSize);
+  const setEditorFontSize = useUIStore((s) => s.setEditorFontSize);
+  const editorLineHeight = useUIStore((s) => s.editorLineHeight);
+  const setEditorLineHeight = useUIStore((s) => s.setEditorLineHeight);
+  const [textSizeMenuOpen, setTextSizeMenuOpen] = useState(false);
   const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedWordCount = useRef(scene.wordCount);
   const snapshotTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -297,6 +304,80 @@ export default function Editor({ scene }: { scene: Scene }) {
 
           <div className="mx-1 h-4 w-px bg-[var(--border)]" />
 
+          <div className="mx-1 h-4 w-px bg-[var(--border)]" />
+
+          <div className="relative">
+            <ToolbarButton
+              onClick={() => setTextSizeMenuOpen((v) => !v)}
+              active={textSizeMenuOpen}
+              title="Text size & line spacing"
+            >
+              <ALargeSmall size={16} />
+            </ToolbarButton>
+            {textSizeMenuOpen && (
+              <div className="absolute left-0 top-9 z-20 w-52 rounded-md border border-[var(--border)] bg-[var(--bg)] p-3 shadow-lg">
+                <div className="mb-3">
+                  <div className="mb-1.5 flex items-center justify-between text-xs text-ink-soft">
+                    <span>Text size</span>
+                    <span>{Math.round(editorFontSize)}px</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => setEditorFontSize(editorFontSize - 1)}
+                      className="flex h-7 w-7 items-center justify-center rounded-md text-ink-soft hover:bg-[var(--bg-dim)] hover:text-sepia"
+                      title="Smaller text"
+                    >
+                      <Minus size={13} />
+                    </button>
+                    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[var(--border)]">
+                      <div
+                        className="h-full rounded-full bg-sepia"
+                        style={{ width: `${((editorFontSize - 14) / (26 - 14)) * 100}%` }}
+                      />
+                    </div>
+                    <button
+                      onClick={() => setEditorFontSize(editorFontSize + 1)}
+                      className="flex h-7 w-7 items-center justify-center rounded-md text-ink-soft hover:bg-[var(--bg-dim)] hover:text-sepia"
+                      title="Larger text"
+                    >
+                      <Plus size={13} />
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <div className="mb-1.5 flex items-center justify-between text-xs text-ink-soft">
+                    <span>Line spacing</span>
+                    <span>{editorLineHeight.toFixed(1)}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => setEditorLineHeight(editorLineHeight - 0.15)}
+                      className="flex h-7 w-7 items-center justify-center rounded-md text-ink-soft hover:bg-[var(--bg-dim)] hover:text-sepia"
+                      title="Tighter lines"
+                    >
+                      <Minus size={13} />
+                    </button>
+                    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[var(--border)]">
+                      <div
+                        className="h-full rounded-full bg-sepia"
+                        style={{ width: `${((editorLineHeight - 1.3) / (2.4 - 1.3)) * 100}%` }}
+                      />
+                    </div>
+                    <button
+                      onClick={() => setEditorLineHeight(editorLineHeight + 0.15)}
+                      className="flex h-7 w-7 items-center justify-center rounded-md text-ink-soft hover:bg-[var(--bg-dim)] hover:text-sepia"
+                      title="Wider lines"
+                    >
+                      <Plus size={13} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="mx-1 h-4 w-px bg-[var(--border)]" />
+
           <ToolbarButton onClick={() => editor.chain().focus().undo().run()} title="Undo (Ctrl+Z)">
             <Undo2 size={15} />
           </ToolbarButton>
@@ -306,7 +387,15 @@ export default function Editor({ scene }: { scene: Scene }) {
           </div>
         </div>
       )}
-      <div className="mx-auto max-w-[680px] px-6 py-10">
+      <div
+        className="mx-auto max-w-[680px] px-6 py-10"
+        style={
+          {
+            "--editor-font-size": `${editorFontSize}px`,
+            "--editor-line-height": editorLineHeight,
+          } as React.CSSProperties
+        }
+      >
         <EditorContent editor={editor} />
       </div>
     </div>

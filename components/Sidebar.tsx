@@ -21,6 +21,58 @@ import { db, type Chapter, type Scene } from "@/lib/db";
 import { newId } from "@/lib/utils";
 import { GripVertical, Plus, ChevronDown, ChevronRight, FileText, Trash2 } from "lucide-react";
 
+function SortableScene({
+  scene,
+  isActive,
+  onSelectScene,
+  onDelete,
+}: {
+  scene: Scene;
+  isActive: boolean;
+  onSelectScene: (id: string) => void;
+  onDelete: (id: string, e: React.MouseEvent) => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: scene.id,
+  });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      onClick={() => onSelectScene(scene.id)}
+      className={`group/scene flex w-full cursor-pointer items-center gap-1 rounded-md px-1 py-1.5 text-left text-sm transition-colors ${
+        isActive ? "bg-sepia/15 text-sepia font-medium" : "text-ink-soft hover:bg-[var(--bg-dim)]"
+      }`}
+    >
+      <button
+        {...attributes}
+        {...listeners}
+        onClick={(e) => e.stopPropagation()}
+        className="shrink-0 cursor-grab text-ink-soft/30 opacity-0 hover:text-ink-soft group-hover/scene:opacity-100"
+        title="Drag to reorder"
+      >
+        <GripVertical size={12} />
+      </button>
+      <FileText size={13} className="shrink-0" />
+      <span className="flex-1 truncate">{scene.title}</span>
+      <span className="shrink-0 text-xs opacity-50">{scene.wordCount}</span>
+      <button
+        onClick={(e) => onDelete(scene.id, e)}
+        className="shrink-0 text-ink-soft/40 opacity-0 hover:text-rose group-hover/scene:opacity-100"
+        title="Delete scene"
+      >
+        <Trash2 size={12} />
+      </button>
+    </div>
+  );
+}
+
 function SortableChapter({
   chapter,
   scenes,
@@ -41,6 +93,16 @@ function SortableChapter({
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
+  };
+  const sceneSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+  const handleSceneDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = scenes.findIndex((s) => s.id === active.id);
+    const newIndex = scenes.findIndex((s) => s.id === over.id);
+    const reordered = arrayMove(scenes, oldIndex, newIndex);
+    await Promise.all(reordered.map((s, i) => db.scenes.update(s.id, { order: i })));
   };
 
   const addScene = async () => {
@@ -109,28 +171,19 @@ function SortableChapter({
       </div>
       {open && (
         <div className="ml-6 border-l border-[var(--border)] pl-2">
-          {scenes.map((scene) => (
-            <div
-              key={scene.id}
-              onClick={() => onSelectScene(scene.id)}
-              className={`group/scene flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
-                activeSceneId === scene.id
-                  ? "bg-sepia/15 text-sepia font-medium"
-                  : "text-ink-soft hover:bg-[var(--bg-dim)]"
-              }`}
-            >
-              <FileText size={13} className="shrink-0" />
-              <span className="flex-1 truncate">{scene.title}</span>
-              <span className="shrink-0 text-xs opacity-50">{scene.wordCount}</span>
-              <button
-                onClick={(e) => deleteScene(scene.id, e)}
-                className="shrink-0 text-ink-soft/40 opacity-0 hover:text-rose group-hover/scene:opacity-100"
-                title="Delete scene"
-              >
-                <Trash2 size={12} />
-              </button>
-            </div>
-          ))}
+          <DndContext sensors={sceneSensors} collisionDetection={closestCenter} onDragEnd={handleSceneDragEnd}>
+            <SortableContext items={scenes.map((s) => s.id)} strategy={verticalListSortingStrategy}>
+              {scenes.map((scene) => (
+                <SortableScene
+                  key={scene.id}
+                  scene={scene}
+                  isActive={activeSceneId === scene.id}
+                  onSelectScene={onSelectScene}
+                  onDelete={deleteScene}
+                />
+              ))}
+            </SortableContext>
+          </DndContext>
           {scenes.length === 0 && (
             <button
               onClick={addScene}
