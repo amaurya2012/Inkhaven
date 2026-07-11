@@ -53,6 +53,7 @@ export default function TopBar({ book }: { book: Book }) {
     toggleAmbientSound,
     ambientPreset,
     setAmbientPreset,
+    flushSave,
     saveStatus,
   } = useUIStore();
   const [exportOpen, setExportOpen] = useState(false);
@@ -214,7 +215,8 @@ export default function TopBar({ book }: { book: Book }) {
           {exportOpen && (
             <div className="absolute right-0 top-9 z-10 w-40 overflow-hidden rounded-md border border-[var(--border)] bg-[var(--bg)] py-1 shadow-lg">
               <button
-                onClick={() => {
+                onClick={async () => {
+                  if (flushSave) await flushSave();
                   void exportToDocx(book.id);
                   setExportOpen(false);
                 }}
@@ -223,7 +225,8 @@ export default function TopBar({ book }: { book: Book }) {
                 Export as .docx
               </button>
               <button
-                onClick={() => {
+                onClick={async () => {
+                  if (flushSave) await flushSave();
                   void exportToPdf(book.id);
                   setExportOpen(false);
                 }}

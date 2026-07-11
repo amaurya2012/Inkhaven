@@ -144,6 +144,21 @@ export default function Editor({ scene }: { scene: Scene }) {
     lastSavedWordCount.current = scene.wordCount;
   }, [scene.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // let TopBar force-flush any pending debounced save before exporting,
+  // so exports never include stale/unsaved content
+  const setFlushSave = useUIStore((s) => s.setFlushSave);
+  useEffect(() => {
+    if (!editor) return;
+    setFlushSave(async () => {
+      if (saveTimeout.current) {
+        clearTimeout(saveTimeout.current);
+        saveTimeout.current = null;
+      }
+      await persist(editor.getJSON(), editor.getText());
+    });
+    return () => setFlushSave(null);
+  }, [editor, persist, setFlushSave]);
+
   // periodic version snapshot every 3 minutes while editing
   useEffect(() => {
     snapshotTimer.current = setInterval(async () => {

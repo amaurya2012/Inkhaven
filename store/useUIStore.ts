@@ -20,6 +20,8 @@ interface UIState {
   setEditorFontSize: (n: number) => void;
   editorLineHeight: number;
   setEditorLineHeight: (n: number) => void;
+  flushSave: (() => Promise<void>) | null;
+  setFlushSave: (fn: (() => Promise<void>) | null) => void;
   ambientSound: boolean;
   toggleAmbientSound: () => void;
   ambientPreset: AmbientPreset;
@@ -50,6 +52,8 @@ export const useUIStore = create<UIState>((set) => ({
   setEditorFontSize: (n) => set({ editorFontSize: Math.min(26, Math.max(14, n)) }),
   editorLineHeight: 1.85,
   setEditorLineHeight: (n) => set({ editorLineHeight: Math.min(2.4, Math.max(1.3, Math.round(n * 100) / 100)) }),
+  flushSave: null,
+  setFlushSave: (fn) => set({ flushSave: fn }),
   ambientSound: false,
   toggleAmbientSound: () => set((s) => ({ ambientSound: !s.ambientSound })),
   ambientPreset: "rain",
