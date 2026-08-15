@@ -1,6 +1,7 @@
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, PageBreak, AlignmentType } from "docx";
 import { saveAs } from "file-saver";
 import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
 import { db, type Book, type Chapter, type Scene } from "@/lib/db";
 import { notoDevanagariBase64 } from "@/lib/notoDevanagariBase64";
 
@@ -67,7 +68,7 @@ function paraText(p: ParaData): string {
 }
 
 // Matches any character in the Devanagari Unicode block (covers Hindi,
-// Marathi, Sanskrit, etc.) so we know when a word needs the embedded font.
+// Marathi, Sanskrit, etc.).
 const DEVANAGARI_RE = /[\u0900-\u097F]/;
 
 async function getManuscriptData(bookId: string) {
@@ -81,6 +82,11 @@ async function getManuscriptData(bookId: string) {
   return { book: book as Book, chapterData };
 }
 
+// ============================================================
+// DOCX export — Word/LibreOffice shape Devanagari correctly on
+// their own, so this needs no special handling for Hindi text.
+// ============================================================
+
 const DOCX_ALIGN: Record<ParaAlign, (typeof AlignmentType)[keyof typeof AlignmentType]> = {
   left: AlignmentType.LEFT,
   center: AlignmentType.CENTER,
@@ -91,15 +97,8 @@ const DOCX_ALIGN: Record<ParaAlign, (typeof AlignmentType)[keyof typeof Alignmen
 export async function exportToDocx(bookId: string) {
   const { book, chapterData } = await getManuscriptData(bookId);
   const children: Paragraph[] = [
-    new Paragraph({
-      text: book.title,
-      heading: HeadingLevel.TITLE,
-      alignment: "center",
-    }),
-    new Paragraph({
-      text: `by ${book.author || "Unknown"}`,
-      alignment: "center",
-    }),
+    new Paragraph({ text: book.title, heading: HeadingLevel.TITLE, alignment: "center" }),
+    new Paragraph({ text: `by ${book.author || "Unknown"}`, alignment: "center" }),
     new Paragraph({ children: [new PageBreak()] }),
   ];
 
@@ -141,47 +140,45 @@ export async function exportToDocx(bookId: string) {
     }
   });
 
-  const doc = new Document({
-    sections: [{ properties: {}, children }],
-  });
+  const doc = new Document({ sections: [{ properties: {}, children }] });
   const blob = await Packer.toBlob(doc);
   saveAs(blob, `${book.title || "manuscript"}.docx`);
 }
 
-// ---- PDF export ----
-// Manual word-wrapping so bold/italic/underline runs and paragraph alignment
-// (left/center/right/justify) are preserved, and so Devanagari (Hindi) text
-// can be rendered using an embedded Unicode font — jsPDF's built-in fonts
-// (Times/Helvetica) only support Latin script and would otherwise print
-// garbled characters for Hindi text.
+// ============================================================
+// PDF export — two paths:
+//  1. Pure Latin content -> fast, real selectable/searchable text
+//     via jsPDF's built-in fonts, with manual word-wrap so bold/
+//     italic/underline/alignment are preserved.
+//  2. Any Devanagari content -> rendered via the browser's own
+//     text layout (which shapes Devanagari correctly) onto an
+//     off-screen page, captured as an image, and placed into the
+//     PDF. This trades away selectable/searchable text for pages
+//     that are guaranteed to look right.
+// ============================================================
 
-const DEVANAGARI_FONT_NAME = "NotoSansDevanagari";
-let devanagariFontRegistered = false;
-
-function registerDevanagariFont(doc: jsPDF) {
-  if (devanagariFontRegistered) return;
-  doc.addFileToVFS(`${DEVANAGARI_FONT_NAME}.ttf`, notoDevanagariBase64);
-  doc.addFont(`${DEVANAGARI_FONT_NAME}.ttf`, DEVANAGARI_FONT_NAME, "normal");
-  devanagariFontRegistered = true;
+function manuscriptHasDevanagari(
+  book: Book,
+  chapterData: { chapter: Chapter; scenes: Scene[] }[]
+): boolean {
+  if (DEVANAGARI_RE.test(book.title || "") || DEVANAGARI_RE.test(book.author || "")) return true;
+  return chapterData.some(
+    ({ chapter, scenes }) =>
+      DEVANAGARI_RE.test(chapter.title || "") || scenes.some((s) => DEVANAGARI_RE.test(s.content || ""))
+  );
 }
+
+// ---- Path 1: real-text PDF (Latin only) ----
 
 interface Word {
   text: string;
   bold: boolean;
   italic: boolean;
   underline: boolean;
-  devanagari: boolean;
   width: number;
 }
 
-function setPdfStyle(doc: jsPDF, bold: boolean, italic: boolean, size: number, devanagari: boolean) {
-  if (devanagari) {
-    // The embedded font only has one weight registered, so bold/italic
-    // requests just render as regular Devanagari — still fully readable.
-    doc.setFont(DEVANAGARI_FONT_NAME, "normal");
-    doc.setFontSize(size);
-    return;
-  }
+function setPdfStyle(doc: jsPDF, bold: boolean, italic: boolean, size: number) {
   const style = bold && italic ? "bolditalic" : bold ? "bold" : italic ? "italic" : "normal";
   doc.setFont("times", style);
   doc.setFontSize(size);
@@ -190,27 +187,18 @@ function setPdfStyle(doc: jsPDF, bold: boolean, italic: boolean, size: number, d
 function paraToWords(doc: jsPDF, p: ParaData, fontSize: number, indentFirst: boolean): Word[] {
   const words: Word[] = [];
   if (indentFirst) {
-    setPdfStyle(doc, false, false, fontSize, false);
-    words.push({
-      text: "     ",
-      bold: false,
-      italic: false,
-      underline: false,
-      devanagari: false,
-      width: doc.getTextWidth("     "),
-    });
+    setPdfStyle(doc, false, false, fontSize);
+    words.push({ text: "     ", bold: false, italic: false, underline: false, width: doc.getTextWidth("     ") });
   }
   p.runs.forEach((run) => {
     const tokens = run.text.split(/(\s+)/).filter((t) => t.length > 0);
     tokens.forEach((tok) => {
-      const isDevanagari = DEVANAGARI_RE.test(tok);
-      setPdfStyle(doc, run.bold || p.heading, run.italic, fontSize, isDevanagari);
+      setPdfStyle(doc, run.bold || p.heading, run.italic, fontSize);
       words.push({
         text: tok,
         bold: run.bold || p.heading,
         italic: run.italic,
         underline: run.underline,
-        devanagari: isDevanagari,
         width: doc.getTextWidth(tok),
       });
     });
@@ -244,7 +232,7 @@ function drawWordLine(
 
   line.forEach((w) => {
     if (!/^\s+$/.test(w.text)) {
-      setPdfStyle(doc, w.bold, w.italic, fontSize, w.devanagari);
+      setPdfStyle(doc, w.bold, w.italic, fontSize);
       doc.text(w.text, x, y);
       if (w.underline) {
         doc.setLineWidth(0.6);
@@ -255,11 +243,8 @@ function drawWordLine(
   });
 }
 
-export async function exportToPdf(bookId: string) {
-  const { book, chapterData } = await getManuscriptData(bookId);
+async function exportToPdfText(book: Book, chapterData: { chapter: Chapter; scenes: Scene[] }[]) {
   const doc = new jsPDF({ unit: "pt", format: "letter" });
-  registerDevanagariFont(doc);
-
   const marginX = 72;
   const marginTop = 90;
   const marginBottom = 72;
@@ -268,11 +253,9 @@ export async function exportToPdf(bookId: string) {
   const maxWidth = pageWidth - marginX * 2;
   let y = marginTop;
 
-  const titleIsDevanagari = DEVANAGARI_RE.test(book.title || "");
-  setPdfStyle(doc, true, false, 20, titleIsDevanagari);
+  setPdfStyle(doc, true, false, 20);
   doc.text(book.title || "Untitled", pageWidth / 2, 200, { align: "center" });
-  const authorIsDevanagari = DEVANAGARI_RE.test(book.author || "");
-  setPdfStyle(doc, false, false, 12, authorIsDevanagari);
+  setPdfStyle(doc, false, false, 12);
   doc.text(`by ${book.author || "Unknown"}`, pageWidth / 2, 230, { align: "center" });
   doc.addPage();
   y = marginTop;
@@ -286,8 +269,7 @@ export async function exportToPdf(bookId: string) {
 
   chapterData.forEach(({ chapter, scenes }, idx) => {
     if (chapter.title && chapter.title.trim()) {
-      const chapterIsDevanagari = DEVANAGARI_RE.test(chapter.title);
-      setPdfStyle(doc, true, false, 18, chapterIsDevanagari);
+      setPdfStyle(doc, true, false, 18);
       ensureSpace(34);
       doc.text(chapter.title, pageWidth / 2, y, { align: "center" });
       y += 34;
@@ -332,4 +314,153 @@ export async function exportToPdf(bookId: string) {
   });
 
   doc.save(`${book.title || "manuscript"}.pdf`);
+}
+
+// ---- Path 2: image-based PDF (handles Devanagari correctly) ----
+
+const PAGE_W = 850;
+const PAGE_H = 1100;
+const MARGIN = 85;
+const CONTENT_W = PAGE_W - MARGIN * 2;
+const CONTENT_H = PAGE_H - MARGIN * 2;
+const EXPORT_FONT_FAMILY = "NotoDevanagariExport, 'Times New Roman', serif";
+
+let devanagariWebFontLoaded = false;
+async function loadDevanagariWebFont() {
+  if (devanagariWebFontLoaded || typeof document === "undefined") return;
+  const fontFace = new FontFace(
+    "NotoDevanagariExport",
+    `url(data:font/truetype;charset=utf-8;base64,${notoDevanagariBase64})`
+  );
+  await fontFace.load();
+  (document.fonts as unknown as { add: (f: FontFace) => void }).add(fontFace);
+  devanagariWebFontLoaded = true;
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function paraToHtml(p: ParaData): string {
+  const align = p.align === "justify" ? "justify" : p.align;
+  const indent = p.align === "left" && !p.heading ? "text-indent:2em;" : "";
+  const fontSize = p.heading ? "20px" : "16px";
+  const runsHtml = p.runs
+    .map((r) => {
+      let style = "";
+      if (r.bold || p.heading) style += "font-weight:bold;";
+      if (r.italic) style += "font-style:italic;";
+      if (r.underline) style += "text-decoration:underline;";
+      return `<span style="${style}">${escapeHtml(r.text)}</span>`;
+    })
+    .join("");
+  return `<p style="margin:0 0 14px 0; text-align:${align}; ${indent} font-size:${fontSize}; line-height:1.5;">${runsHtml}</p>`;
+}
+
+async function renderPagesToImages(blocksHtml: string[]): Promise<string[]> {
+  await loadDevanagariWebFont();
+
+  const container = document.createElement("div");
+  container.style.position = "fixed";
+  container.style.left = "-99999px";
+  container.style.top = "0";
+  container.style.width = `${PAGE_W}px`;
+  container.style.background = "#ffffff";
+  container.style.color = "#000000";
+  container.style.fontFamily = EXPORT_FONT_FAMILY;
+  document.body.appendChild(container);
+
+  const images: string[] = [];
+  let pageDiv = document.createElement("div");
+  pageDiv.style.width = `${CONTENT_W}px`;
+  pageDiv.style.margin = `${MARGIN}px`;
+  container.appendChild(pageDiv);
+
+  const flushPage = async () => {
+    if (pageDiv.childNodes.length === 0) return;
+    const canvas = await html2canvas(container, {
+      scale: 2,
+      backgroundColor: "#ffffff",
+      width: PAGE_W,
+      height: PAGE_H,
+    });
+    images.push(canvas.toDataURL("image/jpeg", 0.92));
+    container.removeChild(pageDiv);
+    pageDiv = document.createElement("div");
+    pageDiv.style.width = `${CONTENT_W}px`;
+    pageDiv.style.margin = `${MARGIN}px`;
+    container.appendChild(pageDiv);
+  };
+
+  for (const html of blocksHtml) {
+    if (html === "__PAGEBREAK__") {
+      await flushPage();
+      continue;
+    }
+    const temp = document.createElement("div");
+    temp.innerHTML = html;
+    const node = temp.firstElementChild as HTMLElement;
+    pageDiv.appendChild(node);
+    if (pageDiv.offsetHeight > CONTENT_H && pageDiv.childNodes.length > 1) {
+      pageDiv.removeChild(node);
+      await flushPage();
+      pageDiv.appendChild(node);
+    }
+  }
+  await flushPage();
+
+  document.body.removeChild(container);
+  return images;
+}
+
+async function exportToPdfImage(book: Book, chapterData: { chapter: Chapter; scenes: Scene[] }[]) {
+  const blocks: string[] = [];
+
+  blocks.push(
+    `<div style="height:${CONTENT_H}px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;">
+      <div style="font-weight:bold; font-size:28px; margin-bottom:10px;">${escapeHtml(book.title || "Untitled")}</div>
+      <div style="font-size:16px;">by ${escapeHtml(book.author || "Unknown")}</div>
+    </div>`
+  );
+  blocks.push("__PAGEBREAK__");
+
+  chapterData.forEach(({ chapter, scenes }, idx) => {
+    if (chapter.title && chapter.title.trim()) {
+      blocks.push(
+        `<p style="text-align:center; font-weight:bold; font-size:22px; margin:0 0 24px 0;">${escapeHtml(chapter.title)}</p>`
+      );
+    }
+    scenes.forEach((scene) => {
+      const paras = tiptapJsonToParagraphs(scene.content);
+      paras.forEach((p) => {
+        if (!paraText(p).trim()) return;
+        blocks.push(paraToHtml(p));
+      });
+    });
+    if (idx < chapterData.length - 1) {
+      blocks.push("__PAGEBREAK__");
+    }
+  });
+
+  const images = await renderPagesToImages(blocks);
+
+  const doc = new jsPDF({ unit: "pt", format: "letter" });
+  const pdfPageW = doc.internal.pageSize.getWidth();
+  const pdfPageH = doc.internal.pageSize.getHeight();
+
+  images.forEach((imgData, i) => {
+    if (i > 0) doc.addPage();
+    doc.addImage(imgData, "JPEG", 0, 0, pdfPageW, pdfPageH);
+  });
+
+  doc.save(`${book.title || "manuscript"}.pdf`);
+}
+
+export async function exportToPdf(bookId: string) {
+  const { book, chapterData } = await getManuscriptData(bookId);
+  if (manuscriptHasDevanagari(book, chapterData)) {
+    await exportToPdfImage(book, chapterData);
+  } else {
+    await exportToPdfText(book, chapterData);
+  }
 }
