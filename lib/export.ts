@@ -146,29 +146,18 @@ export async function exportToDocx(bookId: string) {
 }
 
 // ============================================================
-// PDF export — two paths:
-//  1. Pure Latin content -> fast, real selectable/searchable text
-//     via jsPDF's built-in fonts, with manual word-wrap so bold/
-//     italic/underline/alignment are preserved.
-//  2. Any Devanagari content -> rendered via the browser's own
-//     text layout (which shapes Devanagari correctly) onto an
-//     off-screen page, captured as an image, and placed into the
-//     PDF. This trades away selectable/searchable text for pages
-//     that are guaranteed to look right.
+// PDF export
+//
+// Latin (English) paragraphs render as real, selectable/searchable
+// text via jsPDF's built-in fonts, with manual word-wrap so bold/
+// italic/underline/alignment are preserved.
+//
+// Any paragraph containing Devanagari (Hindi) is instead rasterized
+// via the browser's own text layout — which shapes Devanagari
+// correctly — and dropped into the PDF as a small inline image at
+// the right position. Only Hindi paragraphs pay that cost; English
+// content in the same book is completely unaffected.
 // ============================================================
-
-function manuscriptHasDevanagari(
-  book: Book,
-  chapterData: { chapter: Chapter; scenes: Scene[] }[]
-): boolean {
-  if (DEVANAGARI_RE.test(book.title || "") || DEVANAGARI_RE.test(book.author || "")) return true;
-  return chapterData.some(
-    ({ chapter, scenes }) =>
-      DEVANAGARI_RE.test(chapter.title || "") || scenes.some((s) => DEVANAGARI_RE.test(s.content || ""))
-  );
-}
-
-// ---- Path 1: real-text PDF (Latin only) ----
 
 interface Word {
   text: string;
@@ -243,86 +232,45 @@ function drawWordLine(
   });
 }
 
-async function exportToPdfText(book: Book, chapterData: { chapter: Chapter; scenes: Scene[] }[]) {
-  const doc = new jsPDF({ unit: "pt", format: "letter" });
-  const marginX = 72;
-  const marginTop = 90;
-  const marginBottom = 72;
-  const pageHeight = doc.internal.pageSize.getHeight();
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const maxWidth = pageWidth - marginX * 2;
-  let y = marginTop;
+function drawTextParagraph(
+  doc: jsPDF,
+  p: ParaData,
+  y: number,
+  marginX: number,
+  pageWidth: number,
+  maxWidth: number,
+  ensureSpace: (h: number) => void
+): number {
+  const fontSize = p.heading ? 14 : 12;
+  const lineHeight = p.heading ? 20 : 18;
+  const indentFirst = p.align === "left" && !p.heading;
+  const words = paraToWords(doc, p, fontSize, indentFirst);
 
-  setPdfStyle(doc, true, false, 20);
-  doc.text(book.title || "Untitled", pageWidth / 2, 200, { align: "center" });
-  setPdfStyle(doc, false, false, 12);
-  doc.text(`by ${book.author || "Unknown"}`, pageWidth / 2, 230, { align: "center" });
-  doc.addPage();
-  y = marginTop;
-
-  const ensureSpace = (lineHeight: number) => {
-    if (y + lineHeight > pageHeight - marginBottom) {
-      doc.addPage();
-      y = marginTop;
+  const lines: Word[][] = [];
+  let current: Word[] = [];
+  let currentWidth = 0;
+  words.forEach((w) => {
+    if (currentWidth + w.width > maxWidth && current.length > 0) {
+      lines.push(current);
+      current = [];
+      currentWidth = 0;
+      if (/^\s+$/.test(w.text)) return;
     }
-  };
-
-  chapterData.forEach(({ chapter, scenes }, idx) => {
-    if (chapter.title && chapter.title.trim()) {
-      setPdfStyle(doc, true, false, 18);
-      ensureSpace(34);
-      doc.text(chapter.title, pageWidth / 2, y, { align: "center" });
-      y += 34;
-    }
-
-    scenes.forEach((scene) => {
-      const paras = tiptapJsonToParagraphs(scene.content);
-      paras.forEach((p) => {
-        if (!paraText(p).trim()) return;
-        const fontSize = p.heading ? 14 : 12;
-        const lineHeight = p.heading ? 20 : 18;
-        const indentFirst = p.align === "left" && !p.heading;
-        const words = paraToWords(doc, p, fontSize, indentFirst);
-
-        const lines: Word[][] = [];
-        let current: Word[] = [];
-        let currentWidth = 0;
-        words.forEach((w) => {
-          if (currentWidth + w.width > maxWidth && current.length > 0) {
-            lines.push(current);
-            current = [];
-            currentWidth = 0;
-            if (/^\s+$/.test(w.text)) return;
-          }
-          current.push(w);
-          currentWidth += w.width;
-        });
-        if (current.length > 0) lines.push(current);
-
-        lines.forEach((line, i) => {
-          ensureSpace(lineHeight);
-          drawWordLine(doc, line, y, p.align, marginX, pageWidth, maxWidth, i === lines.length - 1, fontSize);
-          y += lineHeight;
-        });
-        y += 6;
-      });
-    });
-    if (idx < chapterData.length - 1) {
-      doc.addPage();
-      y = marginTop;
-    }
+    current.push(w);
+    currentWidth += w.width;
   });
+  if (current.length > 0) lines.push(current);
 
-  doc.save(`${book.title || "manuscript"}.pdf`);
+  lines.forEach((line, i) => {
+    ensureSpace(lineHeight);
+    drawWordLine(doc, line, y, p.align, marginX, pageWidth, maxWidth, i === lines.length - 1, fontSize);
+    y += lineHeight;
+  });
+  return y + 6;
 }
 
-// ---- Path 2: image-based PDF (handles Devanagari correctly) ----
+// ---- Devanagari paragraph -> small inline image ----
 
-const PAGE_W = 850;
-const PAGE_H = 1100;
-const MARGIN = 85;
-const CONTENT_W = PAGE_W - MARGIN * 2;
-const CONTENT_H = PAGE_H - MARGIN * 2;
 const EXPORT_FONT_FAMILY = "NotoDevanagariExport, 'Times New Roman', serif";
 
 let devanagariWebFontLoaded = false;
@@ -354,113 +302,127 @@ function paraToHtml(p: ParaData): string {
       return `<span style="${style}">${escapeHtml(r.text)}</span>`;
     })
     .join("");
-  return `<p style="margin:0 0 14px 0; text-align:${align}; ${indent} font-size:${fontSize}; line-height:1.5;">${runsHtml}</p>`;
+  return `<div style="margin:0; text-align:${align}; ${indent} font-size:${fontSize}; line-height:1.5;">${runsHtml}</div>`;
 }
 
-async function renderPagesToImages(blocksHtml: string[]): Promise<string[]> {
+async function renderParagraphImage(p: ParaData, widthPt: number): Promise<{ dataUrl: string; heightPt: number }> {
   await loadDevanagariWebFont();
 
   const container = document.createElement("div");
   container.style.position = "fixed";
   container.style.left = "-99999px";
   container.style.top = "0";
-  container.style.width = `${PAGE_W}px`;
+  container.style.width = `${widthPt}px`;
   container.style.background = "#ffffff";
   container.style.color = "#000000";
   container.style.fontFamily = EXPORT_FONT_FAMILY;
+  container.innerHTML = paraToHtml(p);
   document.body.appendChild(container);
 
-  const images: string[] = [];
-  let pageDiv = document.createElement("div");
-  pageDiv.style.width = `${CONTENT_W}px`;
-  pageDiv.style.margin = `${MARGIN}px`;
-  container.appendChild(pageDiv);
-
-  const flushPage = async () => {
-    if (pageDiv.childNodes.length === 0) return;
-    const canvas = await html2canvas(container, {
-      scale: 2,
-      backgroundColor: "#ffffff",
-      width: PAGE_W,
-      height: PAGE_H,
-    });
-    images.push(canvas.toDataURL("image/jpeg", 0.92));
-    container.removeChild(pageDiv);
-    pageDiv = document.createElement("div");
-    pageDiv.style.width = `${CONTENT_W}px`;
-    pageDiv.style.margin = `${MARGIN}px`;
-    container.appendChild(pageDiv);
-  };
-
-  for (const html of blocksHtml) {
-    if (html === "__PAGEBREAK__") {
-      await flushPage();
-      continue;
-    }
-    const temp = document.createElement("div");
-    temp.innerHTML = html;
-    const node = temp.firstElementChild as HTMLElement;
-    pageDiv.appendChild(node);
-    if (pageDiv.offsetHeight > CONTENT_H && pageDiv.childNodes.length > 1) {
-      pageDiv.removeChild(node);
-      await flushPage();
-      pageDiv.appendChild(node);
-    }
-  }
-  await flushPage();
+  const canvas = await html2canvas(container, { scale: 3, backgroundColor: "#ffffff" });
+  const dataUrl = canvas.toDataURL("image/png");
+  const heightPt = widthPt * (canvas.height / canvas.width);
 
   document.body.removeChild(container);
-  return images;
+  return { dataUrl, heightPt };
 }
 
-async function exportToPdfImage(book: Book, chapterData: { chapter: Chapter; scenes: Scene[] }[]) {
-  const blocks: string[] = [];
+async function drawImageParagraph(
+  doc: jsPDF,
+  p: ParaData,
+  y: number,
+  marginX: number,
+  pageWidth: number,
+  maxWidth: number,
+  ensureSpace: (h: number) => void
+): Promise<number> {
+  const { dataUrl, heightPt } = await renderParagraphImage(p, maxWidth);
+  ensureSpace(heightPt);
+  let x = marginX;
+  if (p.align === "center") x = (pageWidth - maxWidth) / 2;
+  doc.addImage(dataUrl, "PNG", x, y, maxWidth, heightPt);
+  return y + heightPt + 6;
+}
 
-  blocks.push(
-    `<div style="height:${CONTENT_H}px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;">
-      <div style="font-weight:bold; font-size:28px; margin-bottom:10px;">${escapeHtml(book.title || "Untitled")}</div>
-      <div style="font-size:16px;">by ${escapeHtml(book.author || "Unknown")}</div>
-    </div>`
-  );
-  blocks.push("__PAGEBREAK__");
-
-  chapterData.forEach(({ chapter, scenes }, idx) => {
-    if (chapter.title && chapter.title.trim()) {
-      blocks.push(
-        `<p style="text-align:center; font-weight:bold; font-size:22px; margin:0 0 24px 0;">${escapeHtml(chapter.title)}</p>`
-      );
-    }
-    scenes.forEach((scene) => {
-      const paras = tiptapJsonToParagraphs(scene.content);
-      paras.forEach((p) => {
-        if (!paraText(p).trim()) return;
-        blocks.push(paraToHtml(p));
-      });
-    });
-    if (idx < chapterData.length - 1) {
-      blocks.push("__PAGEBREAK__");
-    }
-  });
-
-  const images = await renderPagesToImages(blocks);
-
-  const doc = new jsPDF({ unit: "pt", format: "letter" });
-  const pdfPageW = doc.internal.pageSize.getWidth();
-  const pdfPageH = doc.internal.pageSize.getHeight();
-
-  images.forEach((imgData, i) => {
-    if (i > 0) doc.addPage();
-    doc.addImage(imgData, "JPEG", 0, 0, pdfPageW, pdfPageH);
-  });
-
-  doc.save(`${book.title || "manuscript"}.pdf`);
+async function drawHeadingText(
+  doc: jsPDF,
+  text: string,
+  y: number,
+  pageWidth: number,
+  maxWidth: number,
+  ensureSpace: (h: number) => void
+): Promise<number> {
+  if (DEVANAGARI_RE.test(text)) {
+    const fakePara: ParaData = { runs: [{ text, bold: true, italic: false, underline: false }], align: "center", heading: true };
+    return drawImageParagraph(doc, fakePara, y, (pageWidth - maxWidth) / 2, pageWidth, maxWidth, ensureSpace);
+  }
+  setPdfStyle(doc, true, false, 18);
+  ensureSpace(34);
+  doc.text(text, pageWidth / 2, y, { align: "center" });
+  return y + 34;
 }
 
 export async function exportToPdf(bookId: string) {
   const { book, chapterData } = await getManuscriptData(bookId);
-  if (manuscriptHasDevanagari(book, chapterData)) {
-    await exportToPdfImage(book, chapterData);
+  const doc = new jsPDF({ unit: "pt", format: "letter" });
+  const marginX = 72;
+  const marginTop = 90;
+  const marginBottom = 72;
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const maxWidth = pageWidth - marginX * 2;
+  let y = marginTop;
+
+  const ensureSpace = (lineHeight: number) => {
+    if (y + lineHeight > pageHeight - marginBottom) {
+      doc.addPage();
+      y = marginTop;
+    }
+  };
+
+  // Title page
+  const titleIsDevanagari = DEVANAGARI_RE.test(book.title || "");
+  if (titleIsDevanagari) {
+    const fakePara: ParaData = {
+      runs: [{ text: book.title || "Untitled", bold: true, italic: false, underline: false }],
+      align: "center",
+      heading: true,
+    };
+    const { dataUrl, heightPt } = await renderParagraphImage(fakePara, maxWidth);
+    doc.addImage(dataUrl, "PNG", (pageWidth - maxWidth) / 2, 180, maxWidth, heightPt);
   } else {
-    await exportToPdfText(book, chapterData);
+    setPdfStyle(doc, true, false, 20);
+    doc.text(book.title || "Untitled", pageWidth / 2, 200, { align: "center" });
   }
+  setPdfStyle(doc, false, false, 12);
+  doc.text(`by ${book.author || "Unknown"}`, pageWidth / 2, 240, { align: "center" });
+  doc.addPage();
+  y = marginTop;
+
+  for (let idx = 0; idx < chapterData.length; idx++) {
+    const { chapter, scenes } = chapterData[idx];
+
+    if (chapter.title && chapter.title.trim()) {
+      y = await drawHeadingText(doc, chapter.title, y, pageWidth, maxWidth, ensureSpace);
+    }
+
+    for (const scene of scenes) {
+      const paras = tiptapJsonToParagraphs(scene.content);
+      for (const p of paras) {
+        if (!paraText(p).trim()) continue;
+        if (DEVANAGARI_RE.test(paraText(p))) {
+          y = await drawImageParagraph(doc, p, y, marginX, pageWidth, maxWidth, ensureSpace);
+        } else {
+          y = drawTextParagraph(doc, p, y, marginX, pageWidth, maxWidth, ensureSpace);
+        }
+      }
+    }
+
+    if (idx < chapterData.length - 1) {
+      doc.addPage();
+      y = marginTop;
+    }
+  }
+
+  doc.save(`${book.title || "manuscript"}.pdf`);
 }
