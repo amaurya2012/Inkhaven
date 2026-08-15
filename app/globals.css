@@ -73,7 +73,7 @@ body {
 /* TipTap editor styling */
 .ProseMirror {
   outline: none;
-  font-family: var(--font-editor), Georgia, serif;
+  font-family: var(--font-editor), var(--font-devanagari), Georgia, serif;
   font-size: var(--editor-font-size, 1.15rem);
   line-height: var(--editor-line-height, 1.85);
   color: var(--text);

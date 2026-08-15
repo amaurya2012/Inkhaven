@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Fraunces, Source_Serif_4, Inter } from "next/font/google";
+import { Fraunces, Source_Serif_4, Inter, Noto_Serif_Devanagari } from "next/font/google";
 import "./globals.css";
 import ThemeProvider from "@/components/ThemeProvider";
 
@@ -20,6 +20,12 @@ const editorFont = Source_Serif_4({
 const uiFont = Inter({
   subsets: ["latin"],
   variable: "--font-ui",
+  weight: ["400", "500", "600", "700"],
+});
+
+const devanagariFont = Noto_Serif_Devanagari({
+  subsets: ["devanagari"],
+  variable: "--font-devanagari",
   weight: ["400", "500", "600", "700"],
 });
 
@@ -54,7 +60,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${displayFont.variable} ${editorFont.variable} ${uiFont.variable} font-sans antialiased`}
+        className={`${displayFont.variable} ${editorFont.variable} ${uiFont.variable} ${devanagariFont.variable} font-sans antialiased`}
       >
         <ThemeProvider>{children}</ThemeProvider>
       </body>
