@@ -25,6 +25,8 @@ import {
   ChevronDown,
   CloudRain,
   Waves,
+  Minus,
+  Plus,
 } from "lucide-react";
 
 const SOUND_LABEL: Record<AmbientPreset, string> = {
@@ -53,6 +55,8 @@ export default function TopBar({ book }: { book: Book }) {
     toggleAmbientSound,
     ambientPreset,
     setAmbientPreset,
+    pdfFontSize,
+    setPdfFontSize,
     flushSave,
     saveStatus,
   } = useUIStore();
@@ -213,7 +217,25 @@ export default function TopBar({ book }: { book: Book }) {
             <Download size={13} /> Export
           </button>
           {exportOpen && (
-            <div className="absolute right-0 top-9 z-10 w-40 overflow-hidden rounded-md border border-[var(--border)] bg-[var(--bg)] py-1 shadow-lg">
+            <div className="absolute right-0 top-9 z-10 w-44 overflow-hidden rounded-md border border-[var(--border)] bg-[var(--bg)] py-1 shadow-lg">
+              <div className="flex items-center justify-between border-b border-[var(--border)] px-3 py-2">
+                <span className="text-xs text-ink-soft">PDF font size</span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => setPdfFontSize(pdfFontSize - 1)}
+                    className="flex h-5 w-5 items-center justify-center rounded text-ink-soft hover:bg-[var(--bg-dim)] hover:text-sepia"
+                  >
+                    <Minus size={11} />
+                  </button>
+                  <span className="w-5 text-center text-xs text-ink">{pdfFontSize}</span>
+                  <button
+                    onClick={() => setPdfFontSize(pdfFontSize + 1)}
+                    className="flex h-5 w-5 items-center justify-center rounded text-ink-soft hover:bg-[var(--bg-dim)] hover:text-sepia"
+                  >
+                    <Plus size={11} />
+                  </button>
+                </div>
+              </div>
               <button
                 onClick={async () => {
                   if (flushSave) await flushSave();
@@ -227,7 +249,7 @@ export default function TopBar({ book }: { book: Book }) {
               <button
                 onClick={async () => {
                   if (flushSave) await flushSave();
-                  void exportToPdf(book.id);
+                  void exportToPdf(book.id, pdfFontSize);
                   setExportOpen(false);
                 }}
                 className="block w-full px-3 py-2 text-left text-xs text-ink hover:bg-[var(--bg-dim)] hover:text-sepia"

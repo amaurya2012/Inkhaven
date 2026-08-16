@@ -239,10 +239,11 @@ function drawTextParagraph(
   marginX: number,
   pageWidth: number,
   maxWidth: number,
-  ensureSpace: (h: number) => void
+  ensureSpace: (h: number) => void,
+  bodyFontSize: number
 ): number {
-  const fontSize = p.heading ? 14 : 12;
-  const lineHeight = p.heading ? 20 : 18;
+  const fontSize = p.heading ? bodyFontSize + 2 : bodyFontSize;
+  const lineHeight = fontSize + 6;
   const indentFirst = p.align === "left" && !p.heading;
   const words = paraToWords(doc, p, fontSize, indentFirst);
 
@@ -289,10 +290,10 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function paraToHtml(p: ParaData): string {
+function paraToHtml(p: ParaData, fontSizePx: number): string {
   const align = p.align === "justify" ? "justify" : p.align;
   const indent = p.align === "left" && !p.heading ? "text-indent:2em;" : "";
-  const fontSize = p.heading ? "20px" : "16px";
+  const fontSize = `${fontSizePx}px`;
   const lineHeightCss = p.heading ? "1.8" : "1.7";
   const runsHtml = p.runs
     .map((r) => {
@@ -306,7 +307,11 @@ function paraToHtml(p: ParaData): string {
   return `<div style="margin:0; padding:10px 0; text-align:${align}; ${indent} font-size:${fontSize}; line-height:${lineHeightCss};">${runsHtml}</div>`;
 }
 
-async function renderParagraphImage(p: ParaData, widthPt: number): Promise<{ dataUrl: string; heightPt: number }> {
+async function renderParagraphImage(
+  p: ParaData,
+  widthPt: number,
+  fontSizePx: number
+): Promise<{ dataUrl: string; heightPt: number }> {
   await loadDevanagariWebFont();
 
   const container = document.createElement("div");
@@ -317,7 +322,7 @@ async function renderParagraphImage(p: ParaData, widthPt: number): Promise<{ dat
   container.style.background = "#ffffff";
   container.style.color = "#000000";
   container.style.fontFamily = EXPORT_FONT_FAMILY;
-  container.innerHTML = paraToHtml(p);
+  container.innerHTML = paraToHtml(p, fontSizePx);
   document.body.appendChild(container);
 
   // Give the browser a couple of frames to actually complete layout for the
@@ -342,9 +347,11 @@ async function drawImageParagraph(
   marginX: number,
   pageWidth: number,
   maxWidth: number,
-  ensureSpace: (h: number) => void
+  ensureSpace: (h: number) => void,
+  bodyFontSize: number
 ): Promise<number> {
-  const { dataUrl, heightPt } = await renderParagraphImage(p, maxWidth);
+  const fontSizePx = p.heading ? bodyFontSize + 2 : bodyFontSize;
+  const { dataUrl, heightPt } = await renderParagraphImage(p, maxWidth, fontSizePx);
   ensureSpace(heightPt);
   let x = marginX;
   if (p.align === "center") x = (pageWidth - maxWidth) / 2;
@@ -358,20 +365,26 @@ async function drawHeadingText(
   y: number,
   pageWidth: number,
   maxWidth: number,
-  ensureSpace: (h: number) => void
+  ensureSpace: (h: number) => void,
+  bodyFontSize: number
 ): Promise<number> {
+  const chapterSize = bodyFontSize + 6;
   if (DEVANAGARI_RE.test(text)) {
     const fakePara: ParaData = { runs: [{ text, bold: true, italic: false, underline: false }], align: "center", heading: true };
-    return drawImageParagraph(doc, fakePara, y, (pageWidth - maxWidth) / 2, pageWidth, maxWidth, ensureSpace);
+    const { dataUrl, heightPt } = await renderParagraphImage(fakePara, maxWidth, chapterSize);
+    ensureSpace(heightPt);
+    doc.addImage(dataUrl, "PNG", (pageWidth - maxWidth) / 2, y, maxWidth, heightPt);
+    return y + heightPt + 4;
   }
-  setPdfStyle(doc, true, false, 18);
-  ensureSpace(34);
+  setPdfStyle(doc, true, false, chapterSize);
+  ensureSpace(chapterSize + 16);
   doc.text(text, pageWidth / 2, y, { align: "center" });
-  return y + 34;
+  return y + chapterSize + 16;
 }
 
-export async function exportToPdf(bookId: string) {
+export async function exportToPdf(bookId: string, bodyFontSize: number = 12) {
   const { book, chapterData } = await getManuscriptData(bookId);
+  const titleSize = bodyFontSize + 8;
   const doc = new jsPDF({ unit: "pt", format: "letter" });
   const marginX = 72;
   const marginTop = 90;
@@ -396,13 +409,13 @@ export async function exportToPdf(bookId: string) {
       align: "center",
       heading: true,
     };
-    const { dataUrl, heightPt } = await renderParagraphImage(fakePara, maxWidth);
+    const { dataUrl, heightPt } = await renderParagraphImage(fakePara, maxWidth, titleSize);
     doc.addImage(dataUrl, "PNG", (pageWidth - maxWidth) / 2, 180, maxWidth, heightPt);
   } else {
-    setPdfStyle(doc, true, false, 20);
+    setPdfStyle(doc, true, false, titleSize);
     doc.text(book.title || "Untitled", pageWidth / 2, 200, { align: "center" });
   }
-  setPdfStyle(doc, false, false, 12);
+  setPdfStyle(doc, false, false, bodyFontSize);
   doc.text(`by ${book.author || "Unknown"}`, pageWidth / 2, 240, { align: "center" });
   doc.addPage();
   y = marginTop;
@@ -411,7 +424,7 @@ export async function exportToPdf(bookId: string) {
     const { chapter, scenes } = chapterData[idx];
 
     if (chapter.title && chapter.title.trim()) {
-      y = await drawHeadingText(doc, chapter.title, y, pageWidth, maxWidth, ensureSpace);
+      y = await drawHeadingText(doc, chapter.title, y, pageWidth, maxWidth, ensureSpace, bodyFontSize);
     }
 
     for (const scene of scenes) {
@@ -419,9 +432,9 @@ export async function exportToPdf(bookId: string) {
       for (const p of paras) {
         if (!paraText(p).trim()) continue;
         if (DEVANAGARI_RE.test(paraText(p))) {
-          y = await drawImageParagraph(doc, p, y, marginX, pageWidth, maxWidth, ensureSpace);
+          y = await drawImageParagraph(doc, p, y, marginX, pageWidth, maxWidth, ensureSpace, bodyFontSize);
         } else {
-          y = drawTextParagraph(doc, p, y, marginX, pageWidth, maxWidth, ensureSpace);
+          y = drawTextParagraph(doc, p, y, marginX, pageWidth, maxWidth, ensureSpace, bodyFontSize);
         }
       }
     }

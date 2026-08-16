@@ -26,6 +26,8 @@ interface UIState {
   toggleAmbientSound: () => void;
   ambientPreset: AmbientPreset;
   setAmbientPreset: (p: AmbientPreset) => void;
+  pdfFontSize: number;
+  setPdfFontSize: (n: number) => void;
   saveStatus: "saved" | "saving" | "unsaved";
   setSaveStatus: (s: "saved" | "saving" | "unsaved") => void;
 }
@@ -57,6 +59,8 @@ export const useUIStore = create<UIState>((set) => ({
   ambientSound: false,
   toggleAmbientSound: () => set((s) => ({ ambientSound: !s.ambientSound })),
   ambientPreset: "rain",
+  pdfFontSize: 12,
+  setPdfFontSize: (n) => set({ pdfFontSize: Math.min(16, Math.max(9, n)) }),
   setAmbientPreset: (p) => set({ ambientPreset: p }),
   saveStatus: "saved",
   setSaveStatus: (s) => set({ saveStatus: s }),
