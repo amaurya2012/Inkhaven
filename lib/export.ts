@@ -293,6 +293,7 @@ function paraToHtml(p: ParaData): string {
   const align = p.align === "justify" ? "justify" : p.align;
   const indent = p.align === "left" && !p.heading ? "text-indent:2em;" : "";
   const fontSize = p.heading ? "20px" : "16px";
+  const lineHeightCss = p.heading ? "1.4" : "1.3";
   const runsHtml = p.runs
     .map((r) => {
       let style = "";
@@ -302,7 +303,7 @@ function paraToHtml(p: ParaData): string {
       return `<span style="${style}">${escapeHtml(r.text)}</span>`;
     })
     .join("");
-  return `<div style="margin:0; text-align:${align}; ${indent} font-size:${fontSize}; line-height:1.5;">${runsHtml}</div>`;
+  return `<div style="margin:0; text-align:${align}; ${indent} font-size:${fontSize}; line-height:${lineHeightCss};">${runsHtml}</div>`;
 }
 
 async function renderParagraphImage(p: ParaData, widthPt: number): Promise<{ dataUrl: string; heightPt: number }> {
@@ -319,9 +320,16 @@ async function renderParagraphImage(p: ParaData, widthPt: number): Promise<{ dat
   container.innerHTML = paraToHtml(p);
   document.body.appendChild(container);
 
+  // Give the browser a couple of frames to actually complete layout for the
+  // freshly-inserted element before capturing it — capturing too early was
+  // occasionally producing a 0-height canvas, which cascaded into NaN
+  // positions for everything rendered afterwards (showing up as big blank
+  // gaps and misplaced content on later pages).
+  await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+
   const canvas = await html2canvas(container, { scale: 3, backgroundColor: "#ffffff" });
   const dataUrl = canvas.toDataURL("image/png");
-  const heightPt = widthPt * (canvas.height / canvas.width);
+  const heightPt = canvas.width > 0 ? widthPt * (canvas.height / canvas.width) : 20;
 
   document.body.removeChild(container);
   return { dataUrl, heightPt };
@@ -341,7 +349,7 @@ async function drawImageParagraph(
   let x = marginX;
   if (p.align === "center") x = (pageWidth - maxWidth) / 2;
   doc.addImage(dataUrl, "PNG", x, y, maxWidth, heightPt);
-  return y + heightPt + 6;
+  return y + heightPt + 4;
 }
 
 async function drawHeadingText(
