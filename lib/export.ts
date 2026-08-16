@@ -293,7 +293,7 @@ function paraToHtml(p: ParaData): string {
   const align = p.align === "justify" ? "justify" : p.align;
   const indent = p.align === "left" && !p.heading ? "text-indent:2em;" : "";
   const fontSize = p.heading ? "20px" : "16px";
-  const lineHeightCss = p.heading ? "1.4" : "1.3";
+  const lineHeightCss = p.heading ? "1.8" : "1.7";
   const runsHtml = p.runs
     .map((r) => {
       let style = "";
@@ -303,7 +303,7 @@ function paraToHtml(p: ParaData): string {
       return `<span style="${style}">${escapeHtml(r.text)}</span>`;
     })
     .join("");
-  return `<div style="margin:0; text-align:${align}; ${indent} font-size:${fontSize}; line-height:${lineHeightCss};">${runsHtml}</div>`;
+  return `<div style="margin:0; padding:10px 0; text-align:${align}; ${indent} font-size:${fontSize}; line-height:${lineHeightCss};">${runsHtml}</div>`;
 }
 
 async function renderParagraphImage(p: ParaData, widthPt: number): Promise<{ dataUrl: string; heightPt: number }> {
