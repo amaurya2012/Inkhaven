@@ -239,7 +239,7 @@ function drawTextParagraph(
   marginX: number,
   pageWidth: number,
   maxWidth: number,
-  ensureSpace: (h: number) => void,
+  ensureSpace: (currentY: number, h: number) => number,
   bodyFontSize: number
 ): number {
   const fontSize = p.heading ? bodyFontSize + 2 : bodyFontSize;
@@ -263,7 +263,7 @@ function drawTextParagraph(
   if (current.length > 0) lines.push(current);
 
   lines.forEach((line, i) => {
-    ensureSpace(lineHeight);
+    y = ensureSpace(y, lineHeight);
     drawWordLine(doc, line, y, p.align, marginX, pageWidth, maxWidth, i === lines.length - 1, fontSize);
     y += lineHeight;
   });
@@ -347,12 +347,12 @@ async function drawImageParagraph(
   marginX: number,
   pageWidth: number,
   maxWidth: number,
-  ensureSpace: (h: number) => void,
+  ensureSpace: (currentY: number, h: number) => number,
   bodyFontSize: number
 ): Promise<number> {
   const fontSizePx = p.heading ? bodyFontSize + 2 : bodyFontSize;
   const { dataUrl, heightPt } = await renderParagraphImage(p, maxWidth, fontSizePx);
-  ensureSpace(heightPt);
+  y = ensureSpace(y, heightPt);
   let x = marginX;
   if (p.align === "center") x = (pageWidth - maxWidth) / 2;
   doc.addImage(dataUrl, "PNG", x, y, maxWidth, heightPt);
@@ -365,19 +365,19 @@ async function drawHeadingText(
   y: number,
   pageWidth: number,
   maxWidth: number,
-  ensureSpace: (h: number) => void,
+  ensureSpace: (currentY: number, h: number) => number,
   bodyFontSize: number
 ): Promise<number> {
   const chapterSize = bodyFontSize + 6;
   if (DEVANAGARI_RE.test(text)) {
     const fakePara: ParaData = { runs: [{ text, bold: true, italic: false, underline: false }], align: "center", heading: true };
     const { dataUrl, heightPt } = await renderParagraphImage(fakePara, maxWidth, chapterSize);
-    ensureSpace(heightPt);
+    y = ensureSpace(y, heightPt);
     doc.addImage(dataUrl, "PNG", (pageWidth - maxWidth) / 2, y, maxWidth, heightPt);
     return y + heightPt + 4;
   }
   setPdfStyle(doc, true, false, chapterSize);
-  ensureSpace(chapterSize + 16);
+  y = ensureSpace(y, chapterSize + 16);
   doc.text(text, pageWidth / 2, y, { align: "center" });
   return y + chapterSize + 16;
 }
@@ -394,11 +394,12 @@ export async function exportToPdf(bookId: string, bodyFontSize: number = 12) {
   const maxWidth = pageWidth - marginX * 2;
   let y = marginTop;
 
-  const ensureSpace = (lineHeight: number) => {
-    if (y + lineHeight > pageHeight - marginBottom) {
+  const ensureSpace = (currentY: number, neededHeight: number): number => {
+    if (currentY + neededHeight > pageHeight - marginBottom) {
       doc.addPage();
-      y = marginTop;
+      return marginTop;
     }
+    return currentY;
   };
 
   // Title page
@@ -425,6 +426,7 @@ export async function exportToPdf(bookId: string, bodyFontSize: number = 12) {
 
     if (chapter.title && chapter.title.trim()) {
       y = await drawHeadingText(doc, chapter.title, y, pageWidth, maxWidth, ensureSpace, bodyFontSize);
+      // (drawHeadingText already returns the corrected y)
     }
 
     for (const scene of scenes) {
